@@ -109,10 +109,11 @@ class CodeBuffer(object):
                         v_next = self.tppo_values[self.cur_batch_index, step, thread, :, token + 1]
                         if self.algo == "POAD":
                             delta = v_next - v
+                            gae = delta + self.gae_lambda * gae
                         else:
                             # for NTPO
                             delta = self.gamma * v_next - v
-                        gae = delta + self.gamma * self.gae_lambda * gae
+                            gae = delta + self.gamma * self.gae_lambda * gae
                         
                     self.tppo_returns[self.cur_batch_index, step, thread, :, token] = gae + v
                     self.tppo_advantages[self.cur_batch_index, step, thread, :, token] = gae
