@@ -6,6 +6,7 @@ import torch
 from tensorboardX import SummaryWriter
 from mappo.models.codellama import Llama
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
+from mappo.agents.llama_full_agent import LlamaFullAgent
 from mappo.utils.language_buffer import LanguageBuffer
 from mappo.trainers.llm_trainer_appo import APPOTrainer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
@@ -30,6 +31,7 @@ class VirtualHomeRunner:
         self.n_rollout_threads = self.all_args.n_rollout_threads
         self.log_interval = self.all_args.log_interval
         self.algo = self.all_args.algorithm_name
+        self.use_full_scale = self.all_args.use_full_scale
 
         self.run_dir = config["run_dir"]
         self.log_dir = str(self.run_dir / 'logs')
@@ -42,7 +44,10 @@ class VirtualHomeRunner:
 
         self.envs = config['envs']
         self.eval_envs = config['eval_envs']
-        self.agent = LlamaLoRAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
+        if self.use_full_scale:
+            self.agent = LlamaFullAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
+        else:
+            self.agent = LlamaLoRAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
         self.buffer = LanguageBuffer(self.all_args, self.num_agents, self.agent.tokenizer.pad_token_id)
         
 
