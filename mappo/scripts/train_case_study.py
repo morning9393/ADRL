@@ -45,7 +45,7 @@ def main(args):
     all_args = parse_args(args, parser)
 
     all_args.episode_length = 32
-    all_args.n_rollout_threads = 4
+    all_args.n_rollout_threads = 16
     all_args.log_interval = 1
     all_args.critic_lr = 5e-5
         

@@ -66,23 +66,58 @@ class CriticTPPOTrainer:
         # [1722, 278, 20710, 798, 1351] # open the mic row ave
         # [3802, 278, 20710, 798, 1351] # close the mic row ave
             
-        s1_a1_adv = []
-        s1_a2_adv = []
-        s3_a1_adv = []
-        s3_a2_adv = []
+        s1_a1_open_adv = []
+        s1_a1_the_adv = []
+        s1_a1_mic_adv = []
+        s1_a1_row_adv = []
+        s1_a1_ave_adv = []
+        
+        s1_a2_close_adv = []
+        s1_a2_the_adv = []
+        s1_a2_mic_adv = []
+        s1_a2_row_adv = []
+        s1_a2_ave_adv = []
+        
+        s3_a1_open_adv = []
+        s3_a1_the_adv = []
+        s3_a1_mic_adv = []
+        s3_a1_row_adv = []
+        s3_a1_ave_adv = []
+        
+        s3_a2_close_adv = []
+        s3_a2_the_adv = []
+        s3_a2_mic_adv = []
+        s3_a2_row_adv = []
+        s3_a2_ave_adv = []
         for i in range(len(obs_batch)):
             if obs_batch[i][0] == STATES[0]:
                 if action_batch[i][0] == AVAILABLE_ACTIONS[0][0]:
-                    s1_a1_adv.append(advantages_batch[i])
+                    s1_a1_open_adv.append(advantages_batch[i, 0, 0])
+                    s1_a1_the_adv.append(advantages_batch[i, 0, 1])
+                    s1_a1_mic_adv.append(advantages_batch[i, 0, 2])
+                    s1_a1_row_adv.append(advantages_batch[i, 0, 3])
+                    s1_a1_ave_adv.append(advantages_batch[i, 0, 4])
                 elif action_batch[i][0] == AVAILABLE_ACTIONS[0][1]:
-                    s1_a2_adv.append(advantages_batch[i])
+                    s1_a2_close_adv.append(advantages_batch[i, 0, 0])
+                    s1_a2_the_adv.append(advantages_batch[i, 0, 1])
+                    s1_a2_mic_adv.append(advantages_batch[i, 0, 2])
+                    s1_a2_row_adv.append(advantages_batch[i, 0, 3])
+                    s1_a2_ave_adv.append(advantages_batch[i, 0, 4])
                 else:
                     raise ValueError("Invalid action")
             elif obs_batch[i][0] == STATES[2]:
                 if action_batch[i][0] == AVAILABLE_ACTIONS[2][0]:
-                    s3_a1_adv.append(advantages_batch[i])
+                    s3_a1_open_adv.append(advantages_batch[i, 0, 0])
+                    s3_a1_the_adv.append(advantages_batch[i, 0, 1])
+                    s3_a1_mic_adv.append(advantages_batch[i, 0, 2])
+                    s3_a1_row_adv.append(advantages_batch[i, 0, 3])
+                    s3_a1_ave_adv.append(advantages_batch[i, 0, 4])
                 elif action_batch[i][0] == AVAILABLE_ACTIONS[2][1]:
-                    s3_a2_adv.append(advantages_batch[i])
+                    s3_a2_close_adv.append(advantages_batch[i, 0, 0])
+                    s3_a2_the_adv.append(advantages_batch[i, 0, 1])
+                    s3_a2_mic_adv.append(advantages_batch[i, 0, 2])
+                    s3_a2_row_adv.append(advantages_batch[i, 0, 3])
+                    s3_a2_ave_adv.append(advantages_batch[i, 0, 4])
                 else:
                     raise ValueError("Invalid action")
             elif obs_batch[i][0] == STATES[1]:
@@ -113,7 +148,11 @@ class CriticTPPOTrainer:
         self.critic_optimizer.zero_grad()
         critic_grad_norm = critic_grad_norm.item()
         
-        return value_loss, critic_grad_norm
+        return value_loss, critic_grad_norm, \
+            np.mean(s1_a1_open_adv), np.mean(s1_a1_the_adv), np.mean(s1_a1_mic_adv), np.mean(s1_a1_row_adv), np.mean(s1_a1_ave_adv), \
+            np.mean(s1_a2_close_adv), np.mean(s1_a2_the_adv), np.mean(s1_a2_mic_adv), np.mean(s1_a2_row_adv), np.mean(s1_a2_ave_adv), \
+            np.mean(s3_a1_open_adv), np.mean(s3_a1_the_adv), np.mean(s3_a1_mic_adv), np.mean(s3_a1_row_adv), np.mean(s3_a1_ave_adv), \
+            np.mean(s3_a2_close_adv), np.mean(s3_a2_the_adv), np.mean(s3_a2_mic_adv), np.mean(s3_a2_row_adv), np.mean(s3_a2_ave_adv)
 
     def train(self, buffer):
         """
@@ -126,14 +165,61 @@ class CriticTPPOTrainer:
         train_info = {}
         train_info['value_loss'] = 0
         train_info['value_grad_norm'] = 0
+        
+        train_info['s1_a1_open_adv'] = 0
+        train_info['s1_a1_the_adv'] = 0
+        train_info['s1_a1_mic_adv'] = 0
+        train_info['s1_a1_row_adv'] = 0
+        train_info['s1_a1_ave_adv'] = 0
+        train_info['s1_a2_close_adv'] = 0
+        train_info['s1_a2_the_adv'] = 0
+        train_info['s1_a2_mic_adv'] = 0
+        train_info['s1_a2_row_adv'] = 0
+        train_info['s1_a2_ave_adv'] = 0
+        train_info['s3_a1_open_adv'] = 0
+        train_info['s3_a1_the_adv'] = 0
+        train_info['s3_a1_mic_adv'] = 0
+        train_info['s3_a1_row_adv'] = 0
+        train_info['s3_a1_ave_adv'] = 0
+        train_info['s3_a2_close_adv'] = 0
+        train_info['s3_a2_the_adv'] = 0
+        train_info['s3_a2_mic_adv'] = 0
+        train_info['s3_a2_row_adv'] = 0
+        train_info['s3_a2_ave_adv'] = 0
 
         update_time = 0
         for _ in range(self.ppo_epoch):
             data_generator = buffer.tppo_sampler(self.num_mini_batch)
             for sample in data_generator:
-                value_loss, value_grad_norm = self.ppo_update(sample)
+                value_loss, value_grad_norm, \
+                    s1_a1_open_adv, s1_a1_the_adv, s1_a1_mic_adv, s1_a1_row_adv, s1_a1_ave_adv, \
+                    s1_a2_close_adv, s1_a2_the_adv, s1_a2_mic_adv, s1_a2_row_adv, s1_a2_ave_adv, \
+                    s3_a1_open_adv, s3_a1_the_adv, s3_a1_mic_adv, s3_a1_row_adv, s3_a1_ave_adv, \
+                    s3_a2_close_adv, s3_a2_the_adv, s3_a2_mic_adv, s3_a2_row_adv, s3_a2_ave_adv = self.ppo_update(sample)
                 train_info['value_loss'] += value_loss
                 train_info['value_grad_norm'] += value_grad_norm
+                
+                train_info['s1_a1_open_adv'] += s1_a1_open_adv
+                train_info['s1_a1_the_adv'] += s1_a1_the_adv
+                train_info['s1_a1_mic_adv'] += s1_a1_mic_adv
+                train_info['s1_a1_row_adv'] += s1_a1_row_adv
+                train_info['s1_a1_ave_adv'] += s1_a1_ave_adv
+                train_info['s1_a2_close_adv'] += s1_a2_close_adv
+                train_info['s1_a2_the_adv'] += s1_a2_the_adv
+                train_info['s1_a2_mic_adv'] += s1_a2_mic_adv
+                train_info['s1_a2_row_adv'] += s1_a2_row_adv
+                train_info['s1_a2_ave_adv'] += s1_a2_ave_adv
+                train_info['s3_a1_open_adv'] += s3_a1_open_adv
+                train_info['s3_a1_the_adv'] += s3_a1_the_adv
+                train_info['s3_a1_mic_adv'] += s3_a1_mic_adv
+                train_info['s3_a1_row_adv'] += s3_a1_row_adv
+                train_info['s3_a1_ave_adv'] += s3_a1_ave_adv
+                train_info['s3_a2_close_adv'] += s3_a2_close_adv
+                train_info['s3_a2_the_adv'] += s3_a2_the_adv
+                train_info['s3_a2_mic_adv'] += s3_a2_mic_adv
+                train_info['s3_a2_row_adv'] += s3_a2_row_adv
+                train_info['s3_a2_ave_adv'] += s3_a2_ave_adv
+                
                 update_time += 1
 
         for k in train_info.keys():
