@@ -11,6 +11,7 @@ sys.path.append("../../")
 from mappo.config import get_config
 from mappo.envs.virtualhome.virtualhome_env import VirtualHomeEnv
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
+from mappo.agents.llama_full_agent import LlamaFullAgent
 
 
 def parse_args(args, parser):
@@ -20,6 +21,7 @@ def parse_args(args, parser):
     parser.add_argument('--variant', type=str, default='Cheese', help="Which model to uese")
     parser.add_argument('--max_new_tokens', type=int, default=11, help="max_new_tokens")
     parser.add_argument('--vacab_size', type=int, default=32000)
+    parser.add_argument("--use_full_scale", action='store_true', default=False, help="by default False, whether to use full scale model.")
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
@@ -73,7 +75,11 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    agent = LlamaLoRAgent(all_args.model_name, all_args.max_new_tokens, "APPO", all_args.peft_path)
+    if all_args.use_full_scale:
+        agent = LlamaFullAgent(all_args.model_name, all_args.max_new_tokens, "TWOSOME", all_args.peft_path)
+    else:
+        agent = LlamaLoRAgent(all_args.model_name, all_args.max_new_tokens, "TWOSOME", all_args.peft_path)
+    
     # agent = LlamaLoRAgent(all_args.model_name, all_args.max_new_tokens, "APPO")
     eval_envs = VirtualHomeEnv(all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed, variant=all_args.variant)
     # eval_envs = VirtualHomeEnv(all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed)
