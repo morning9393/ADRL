@@ -135,16 +135,23 @@ class LanguageBuffer(object):
         
         for thread in range(self.n_rollout_threads):
             gae = 0
+            next_last_token = 0
             for step in reversed(range(self.episode_length)):
                 last_token = self.get_last_token_position(self.action_tokens[self.cur_batch_index, step, thread, 0, :])
                 for token in reversed(range(last_token + 1)):
                     rew = self.rewards[self.cur_batch_index, step, thread, :]
                     v = self.tppo_values[self.cur_batch_index, step, thread, :, token]
                     if token == last_token:
-                        v_next = self.tppo_values[self.cur_batch_index, step + 1, thread, :, 0]
-                        mask_next = self.masks[self.cur_batch_index, step + 1, thread, :]
-                        delta = rew + self.gamma * v_next * mask_next - v
-                        gae = delta + self.gamma * self.gae_lambda * mask_next * gae
+                        if self.algo == "ARCHER":
+                            v_next = self.tppo_values[self.cur_batch_index, step + 1, thread, :, next_last_token]
+                            mask_next = self.masks[self.cur_batch_index, step + 1, thread, :]
+                            delta = rew + self.gamma * v_next * mask_next - v
+                            gae = delta + self.gamma * self.gae_lambda * mask_next * gae
+                        else:
+                            v_next = self.tppo_values[self.cur_batch_index, step + 1, thread, :, 0]
+                            mask_next = self.masks[self.cur_batch_index, step + 1, thread, :]
+                            delta = rew + self.gamma * v_next * mask_next - v
+                            gae = delta + self.gamma * self.gae_lambda * mask_next * gae
                     else:
                         v_next = self.tppo_values[self.cur_batch_index, step, thread, :, token + 1]
                         if self.algo == "POAD":
@@ -157,6 +164,7 @@ class LanguageBuffer(object):
                         
                     self.tppo_returns[self.cur_batch_index, step, thread, :, token] = gae + v
                     self.tppo_advantages[self.cur_batch_index, step, thread, :, token] = gae
+                next_last_token = last_token
         self.cur_num_batch = self.cur_num_batch + 1 if self.cur_num_batch < self.max_batch else self.max_batch
                 
     def appo_sampler(self, num_mini_batch=None, mini_batch_size=None):

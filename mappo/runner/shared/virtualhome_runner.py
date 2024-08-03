@@ -53,7 +53,7 @@ class VirtualHomeRunner:
 
         if self.algo == "TWOSOME":
             self.trainer = APPOTrainer(self.all_args, self.agent, self.num_agents)
-        elif self.algo in ["POAD", "NTPO"] :
+        elif self.algo in ["POAD", "NTPO", "ARCHER"]:
             self.trainer = TPPOTrainer(self.all_args, self.agent, self.num_agents)
         else:
             raise NotImplementedError
@@ -134,7 +134,7 @@ class VirtualHomeRunner:
         
         if self.algo == "TWOSOME":
             self.buffer.insert_appo(obs, ava, actions, values, rewards, masks, action_tokens, log_probs)
-        elif self.algo in ["POAD", "NTPO"]:
+        elif self.algo in ["POAD", "NTPO", "ARCHER"]:
             self.buffer.insert_tppo(obs, ava, actions, values, rewards, masks, action_tokens, log_probs)
         else:
             raise NotImplementedError
@@ -146,7 +146,7 @@ class VirtualHomeRunner:
             next_values = self.agent.get_next_values(np.concatenate(self.buffer.obs[self.buffer.cur_batch_index, -1]))
             next_values = np.array(np.split(next_values, self.n_rollout_threads))
             self.buffer.batch_process_appo(next_values)
-        elif self.algo in ["POAD", "NTPO"]:
+        elif self.algo in ["POAD", "NTPO", "ARCHER"]:
             next_values = self.agent.get_next_values(np.concatenate(self.buffer.obs[self.buffer.cur_batch_index, -1]))
             next_values = np.array(np.split(next_values, self.n_rollout_threads))
             self.buffer.batch_process_tppo(next_values)

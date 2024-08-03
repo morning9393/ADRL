@@ -32,6 +32,7 @@ class LlamaLoRAgent:
         self.tokenizer.pad_token_id = (
             0  # unk. we want this to be different from the eos token
         )
+        
         self.base_model = LlamaForCausalLM.from_pretrained(model_name, 
                                                            torch_dtype=torch.float16,
                                                            device_map="auto")
@@ -82,7 +83,7 @@ class LlamaLoRAgent:
     def _init_critic(self, critic_weights = None):
         if self.algo == "TWOSOME":
             critic = APPOCritic(self.actor, self.tokenizer)
-        elif self.algo in ["POAD", "NTPO"]:
+        elif self.algo in ["POAD", "NTPO", "ARCHER"]:
             critic = TPPOCritic(self.actor, self.tokenizer)
         else:
             raise NotImplementedError
@@ -104,7 +105,7 @@ class LlamaLoRAgent:
             start_idx = seq_token_lengths[i] - act_token_lengths[i] - 1
             end_idx = seq_token_lengths[i] - 1
             logit_slice = pi_log_softmax[i, start_idx:end_idx, :]
-            token_slice = input_ids[i, start_idx+1:end_idx+1]
+            token_slice = input_ids[i, start_idx:end_idx]
             action_token_list.append(token_slice)
             
             act_logit_seq = torch.gather(logit_slice, 1, token_slice[:, None]).squeeze(-1)
@@ -274,7 +275,7 @@ class LlamaLoRAgent:
             action_tokens = action_tokens.int().cpu().numpy()
             action_log_probs = action_log_probs.float().cpu().numpy()
             return actions, action_tokens, values, action_log_probs
-        elif self.algo in ["POAD", "NTPO"]:
+        elif self.algo in ["POAD", "NTPO", "ARCHER"]:
             values = self.get_token_values(obs, actions).squeeze(-1)
             pi_logits, _ = self.get_token_logits(obs, actions)
             pi_log_softmax = torch.log_softmax(pi_logits, dim=-1)
@@ -334,7 +335,7 @@ class LlamaLoRAgent:
             values = self.get_action_values(obs)
             values = values.cpu().float().numpy()
             return values
-        elif self.algo in ["POAD", "NTPO"]:
+        elif self.algo in ["POAD", "NTPO", "ARCHER"]:
             values = self.get_next_tppo_values(obs).squeeze(-1)
             values = values.cpu().float().numpy()
             return values

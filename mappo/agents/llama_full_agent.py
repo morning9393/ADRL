@@ -69,7 +69,7 @@ class LlamaFullAgent:
             start_idx = seq_token_lengths[i] - act_token_lengths[i] - 1
             end_idx = seq_token_lengths[i] - 1
             logit_slice = pi_log_softmax[i, start_idx:end_idx, :]
-            token_slice = input_ids[i, start_idx+1:end_idx+1]
+            token_slice = input_ids[i, start_idx:end_idx]
             action_token_list.append(token_slice)
             
             act_logit_seq = torch.gather(logit_slice, 1, token_slice[:, None]).squeeze(-1)
