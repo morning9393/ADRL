@@ -50,8 +50,9 @@ def main(args):
     all_args.episode_length = 32
     all_args.n_rollout_threads = 4
     all_args.log_interval = 1
-    all_args.lr = 1e-6
-    all_args.critic_lr = 5e-5
+    # all_args.lr = 1e-7
+    # all_args.critic_lr = 5e-5
+    print(all_args)
         
     run_dir = build_run_dir(all_args)
 
