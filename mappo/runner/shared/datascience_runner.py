@@ -5,7 +5,7 @@ from functools import reduce
 import torch
 from tensorboardX import SummaryWriter
 from mappo.models.codellama import Llama
-from mappo.agents.llama_lora_code_agent import LlamaLoRAgent
+from mappo.agents.llama_lora_code_agent import CodeLlamaLoRAgent
 from mappo.utils.code_buffer import CodeBuffer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
 import pickle
@@ -38,7 +38,7 @@ class DataScienceRunner:
 
         self.envs = config['envs']
         self.eval_envs = config['eval_envs']
-        self.agent = LlamaLoRAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
+        self.agent = CodeLlamaLoRAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
         self.buffer = CodeBuffer(self.all_args, self.num_agents, self.agent.tokenizer.pad_token_id)
         self.trainer = TPPOTrainer(self.all_args, self.agent, self.num_agents)
 

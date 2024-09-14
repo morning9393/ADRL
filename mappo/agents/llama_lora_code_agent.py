@@ -25,7 +25,7 @@ from mappo.models.critic import TPPOCritic
 from mappo.envs.datascience.prompts.scikit_prompts import *
 
 
-class LlamaLoRAgent:
+class CodeLlamaLoRAgent:
 
     def __init__(self, model_name, max_new_tokens, algo, load_path=None):
         self.device = "cuda"
@@ -93,61 +93,6 @@ class LlamaLoRAgent:
             critic.v_head.load_state_dict(torch.load(critic_weights, map_location= "cpu"))
         return critic
     
-    def sample_actions(self, input_ids, token_logits, seq_token_lengths, act_token_lengths, 
-                       action_num_list, action_list, action_ids=None):
-        assert act_token_lengths.max() <= self.max_new_tokens, \
-            f"The length of action tokens {act_token_lengths.max()} exceeds the maximum length {self.max_new_tokens}."
-            
-        pi_log_softmax = torch.log_softmax(token_logits, dim=-1)
-        
-        action_logits = []
-        action_token_list = []
-        flatten_action_list = np.array([a for ac in action_list for a in ac], dtype=np.object_)
-        for i in range(len(act_token_lengths)):
-            start_idx = seq_token_lengths[i] - act_token_lengths[i] - 1
-            end_idx = seq_token_lengths[i] - 1
-            logit_slice = pi_log_softmax[i, start_idx:end_idx, :]
-            token_slice = input_ids[i, start_idx:end_idx]
-            action_token_list.append(token_slice)
-            
-            act_logit_seq = torch.gather(logit_slice, 1, token_slice[:, None]).squeeze(-1)
-            # action_log_softmax = act_logit_seq.sum() / act_token_lengths[i]  # token normalization
-            action_word_length = len(flatten_action_list[i].split())
-            action_log_softmax = act_logit_seq.sum() / action_word_length  # word normalization
-            action_logits.append(action_log_softmax)
-        action_logits = torch.stack(action_logits)
-        
-        actions = []
-        action_tokens = torch.ones((len(action_num_list), self.max_new_tokens), 
-                                   dtype=torch.int64).to("cuda") * self.tokenizer.pad_token_id
-        action_log_probs = []
-        entropies = []
-        for i in range(len(action_num_list)):
-            start = sum(action_num_list[:i])
-            end = sum(action_num_list[:i+1])
-            act_token_lengths_i = act_token_lengths[start:end]
-            action_logits_i = action_logits[start:end]
-            action_token_list_i = action_token_list[start:end]
-            
-            dist_i = Categorical(logits=action_logits_i)
-            if action_ids is None:
-                action_i_idx = dist_i.sample()  # for rollout
-            else:
-                action_i_idx = action_ids[i]  # for training
-            # print("selected action probs: ", dist_i.probs[action_i_idx])
-            
-            action_i = action_list[i][action_i_idx]
-            actions.append(action_i)
-            action_token_i = action_token_list_i[action_i_idx]
-            action_tokens[i, :act_token_lengths_i[action_i_idx]] = action_token_i
-            action_log_probs.append(dist_i.log_prob(action_i_idx))
-            entropies.append(dist_i.entropy())
-        
-        action_log_probs = torch.stack(action_log_probs)
-        entropies = torch.stack(entropies)
-        actions = np.array(actions, dtype=np.object_)
-        return actions, action_tokens, action_log_probs, entropies
-    
     def get_actions(self, obs, actions=None, greedy=False):
         """
         Compute actions and value function predictions for the given inputs.
@@ -164,7 +109,7 @@ class LlamaLoRAgent:
                 top_k=50,
                 temperature=0.5,
                 max_new_tokens=self.max_new_tokens,
-                eos_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=[self.tokenizer.eos_token_id, 736],  # 736 is the "return"
                 pad_token_id=self.tokenizer.pad_token_id,
                 return_dict_in_generate=True,
             )
@@ -174,7 +119,7 @@ class LlamaLoRAgent:
                 attention_mask=attn_mask,
                 do_sample=False,
                 max_new_tokens=self.max_new_tokens,
-                eos_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=[self.tokenizer.eos_token_id, 736],  # 736 is the "return"
                 pad_token_id=self.tokenizer.pad_token_id,
                 return_dict_in_generate=True,
             )
@@ -191,79 +136,52 @@ class LlamaLoRAgent:
         actions = np.array(actions, dtype=np.object_)
         
         return actions, action_tokens
-        
-    def get_action_values(self, obs):
-        obs = obs.tolist()
-        inputs = self.tokenizer(obs, return_tensors="pt", padding=True)
-        input_ids = inputs["input_ids"].to(self.device)
-        attention_mask = inputs["attention_mask"].to(self.device)
-        
-        with self.actor.disable_adapter():
-            values = self.critic(input_ids, attention_mask=attention_mask)
-        # values = values.detach().float().cpu().numpy()
-        return values
     
-    def get_slice(self, logits, seq_token_lengths, obs_token_lengths):
-        act_token_lengths = seq_token_lengths - obs_token_lengths
-        
+    def get_slice(self, logits, obs_full_lengths, act_real_lengths):            
         action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to("cuda")
         for i in range(logits.shape[0]):
-            start_idx = -act_token_lengths[i] - 1
-            end_idx = -1 # the last one is invalid
-            action_slice[i, :act_token_lengths[i]] = logits[i, start_idx:end_idx]
+            start_idx = obs_full_lengths - 1
+            end_idx = obs_full_lengths + act_real_lengths[i] - 1
+            action_slice[i, :act_real_lengths[i]] = logits[i, start_idx:end_idx]
         return action_slice
     
-    def get_token_values(self, obs, actions):
-        obs_act = [obs[i] + actions[i] for i in range(len(obs))]
-        
-        token_seq = self.tokenizer(obs_act, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
-        seq_token_lengths = attn_mask.sum(dim=1)
-        
+    def get_token_values(self, obs, action_tokens):        
         obs_token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
+        obs_input_ids = obs_token_seq["input_ids"].to("cuda")
         obs_attn_mask = obs_token_seq["attention_mask"].to("cuda")
-        obs_token_lengths = obs_attn_mask.sum(dim=1)
+        obs_full_lengths = obs_input_ids.shape[1]
+        
+        act_attn_mask = (action_tokens != 0)
+        act_real_lengths = act_attn_mask.sum(dim=1)
+        
+        obs_act_ids = torch.cat([obs_input_ids, action_tokens], dim=1)
+        obs_act_mask = torch.cat([obs_attn_mask, act_attn_mask], dim=1)
         
         with self.actor.disable_adapter():
-            values = self.critic(input_ids, attention_mask=attn_mask)
-        values = self.get_slice(values, seq_token_lengths, obs_token_lengths)
+            values = self.critic(obs_act_ids, attention_mask=obs_act_mask)
+        values = self.get_slice(values, obs_full_lengths, act_real_lengths)
         return values
     
-    def get_token_logits(self, obs, actions):
-        obs_act = [obs[i] + actions[i] for i in range(len(obs))]
-        
-        token_seq = self.tokenizer(obs_act, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
-        seq_token_lengths = attn_mask.sum(dim=1)
-        
+    def get_token_logits(self, obs, action_tokens):
         obs_token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
+        obs_input_ids = obs_token_seq["input_ids"].to("cuda")
         obs_attn_mask = obs_token_seq["attention_mask"].to("cuda")
-        obs_token_lengths = obs_attn_mask.sum(dim=1)
+        obs_full_lengths = obs_input_ids.shape[1]
+        
+        act_attn_mask = (action_tokens != 0)
+        act_real_lengths = act_attn_mask.sum(dim=1)
+        
+        obs_act_ids = torch.cat([obs_input_ids, action_tokens], dim=1)
+        obs_act_mask = torch.cat([obs_attn_mask, act_attn_mask], dim=1)
         
         with self.actor.disable_adapter():
-            rho_outputs = self.actor(input_ids=input_ids, attention_mask=attn_mask, return_dict=True)
-            rho_logits = self.get_slice(rho_outputs.logits, seq_token_lengths, obs_token_lengths)
+            rho_outputs = self.actor(input_ids=obs_act_ids, attention_mask=obs_act_mask, return_dict=True)
+            rho_logits = self.get_slice(rho_outputs.logits, obs_full_lengths, act_real_lengths)
             
-        pi_outputs = self.actor(input_ids=input_ids, attention_mask=attn_mask, return_dict=True)
-        pi_logits = self.get_slice(pi_outputs.logits, seq_token_lengths, obs_token_lengths)
+        pi_outputs = self.actor(input_ids=obs_act_ids, attention_mask=obs_act_mask, return_dict=True)
+        pi_logits = self.get_slice(pi_outputs.logits, obs_full_lengths, act_real_lengths)
         
         return pi_logits, rho_logits
-    
-    def kl_cal(self, pi_logits, rho_logits, values, action_tokens=None):
-        pi = F.softmax(pi_logits, dim=-1)
-        rho = F.softmax(rho_logits, dim=-1)
-        kl = torch.sum(F.kl_div(torch.log(pi), rho, reduction='none'), dim=-1)
-        # kl = torch.sum(pi * (torch.log_softmax(pi_logits, dim=-1) - torch.log_softmax(rho_logits, dim=-1)), 
-        #                dim=-1)
-        expected_values = torch.sum(pi * values, dim=-1)
-        if action_tokens is not None:
-            token_pi = torch.gather(pi, dim=-1, index=action_tokens.unsqueeze(-1)).squeeze()
-            token_values = torch.gather(values, dim=-1, index=action_tokens.unsqueeze(-1)).squeeze()
-            return kl, expected_values, token_pi, token_values
-        else:
-            return kl, expected_values
         
     def get_last_token_position(self, action_tokens):
         pos = len(action_tokens) - 1
@@ -290,13 +208,12 @@ class LlamaLoRAgent:
         entropies = torch.stack(entropies)
         return action_log_probs, entropies
             
-
     @torch.no_grad()
     def infer_for_rollout(self, obs):
         actions, action_tokens = self.get_actions(obs)
         
-        values = self.get_token_values(obs, actions).squeeze(-1)
-        pi_logits, _ = self.get_token_logits(obs, actions)
+        values = self.get_token_values(obs, action_tokens).squeeze(-1)
+        pi_logits, _ = self.get_token_logits(obs, action_tokens)
         pi_log_softmax = torch.log_softmax(pi_logits, dim=-1)
         token_log_probs = torch.gather(pi_log_softmax, -1, action_tokens.unsqueeze(-1)).squeeze(-1)
         
@@ -305,32 +222,6 @@ class LlamaLoRAgent:
         token_log_probs = token_log_probs.float().cpu().numpy()
         
         return actions, action_tokens, values, token_log_probs
-
-    
-    def get_next_etpo_values(self, obs):
-        
-        token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
-        token_idx = attn_mask.sum(dim=1) - 1
-        
-        # values
-        with self.actor.disable_adapter():
-            values = self.critic(input_ids, attention_mask=attn_mask)
-            values = values[torch.arange(obs.shape[0]), token_idx]
-            
-        # rho logits
-        with self.actor.disable_adapter():
-            rho_outputs = self.actor(input_ids=input_ids, attention_mask=attn_mask, return_dict=True)
-            rho_logits = rho_outputs.logits[torch.arange(obs.shape[0]), token_idx]
-        
-        # pi logits
-        pi_outputs = self.actor(input_ids=input_ids, attention_mask=attn_mask, return_dict=True)
-        pi_logits = pi_outputs.logits[torch.arange(obs.shape[0]), token_idx]
-        
-        kl, expected_values = self.kl_cal(pi_logits, rho_logits, values)
-        
-        return expected_values, kl
     
     def get_next_tppo_values(self, obs): 
         token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
@@ -351,14 +242,9 @@ class LlamaLoRAgent:
         values = self.get_next_tppo_values(obs).squeeze(-1)
         values = values.cpu().float().numpy()
         return values
-        
-    def infer_for_action_update(self, obs, actions, ava=None, action_tokens= None):
-        assert action_tokens is not None, "action_tokens could not be none"
-        action_log_probs, entropies = self.get_joint_action_log_probs(obs, actions, action_tokens)
-        return action_log_probs, entropies
     
-    def infer_for_token_update(self, obs, actions):
-        pi_logits, rho_logits = self.get_token_logits(obs, actions)
+    def infer_for_token_update(self, obs, action_tokens):
+        pi_logits, rho_logits = self.get_token_logits(obs, action_tokens)
         return pi_logits, rho_logits
 
     def save(self, save_dir, episode):

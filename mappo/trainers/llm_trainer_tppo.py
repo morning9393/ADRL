@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mappo.utils.util import get_gard_norm, huber_loss, mse_loss
 from torch.distributions.categorical import Categorical
+from mappo.agents.llama_lora_code_agent import CodeLlamaLoRAgent
+from mappo.agents.llama_lora_agent import LlamaLoRAgent
 
 class TPPOTrainer:
 
@@ -91,7 +93,13 @@ class TPPOTrainer:
         batch_size = obs_batch.shape[0]
         
         # critic update
-        values_infer = self.agent.get_token_values(np.concatenate(obs_batch), np.concatenate(action_batch)).squeeze(-1)
+        if isinstance(self.agent, CodeLlamaLoRAgent):
+            values_infer = self.agent.get_token_values(np.concatenate(obs_batch), 
+                                                       action_tokens_batch.view(-1, action_tokens_batch.shape[-1])).squeeze(-1)
+        elif isinstance(self.agent, LlamaLoRAgent):
+            values_infer = self.agent.get_token_values(np.concatenate(obs_batch), np.concatenate(action_batch)).squeeze(-1)
+        else:
+            raise ValueError("Invalid agent type")
         values_infer = values_infer.view(batch_size, -1, values_infer.shape[-1])
         
         value_loss = self.cal_value_loss(values_infer, value_preds_batch, return_batch, token_mask)
@@ -114,8 +122,12 @@ class TPPOTrainer:
         total_entropy = 0
         for start in range(0, batch_size, cp_batch_size):
             end = start + cp_batch_size
-            pi_logits, _ = self.agent.infer_for_token_update(np.concatenate(obs_batch[start:end]), 
-                                                             np.concatenate(action_batch[start:end]))
+            if isinstance(self.agent, CodeLlamaLoRAgent):
+                pi_logits, _ = self.agent.infer_for_token_update(np.concatenate(obs_batch[start:end]), 
+                                                                 action_tokens_batch[start:end].view(-1, action_tokens_batch.shape[-1]))
+            elif isinstance(self.agent, LlamaLoRAgent):
+                pi_logits, _ = self.agent.infer_for_token_update(np.concatenate(obs_batch[start:end]), 
+                                                                np.concatenate(action_batch[start:end]))
             pi_logits = pi_logits.view(cp_batch_size, -1, *pi_logits.shape[-2:])
             pi_log_prob = torch.log_softmax(pi_logits, dim=-1)
             log_prob_infer = torch.gather(pi_log_prob, -1, action_tokens_batch[start:end].unsqueeze(-1)).squeeze(-1)
